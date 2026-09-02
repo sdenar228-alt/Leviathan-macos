@@ -1,238 +1,123 @@
-[![DDraceNetwork](https://ddnet.org/ddnet-small.png)](https://ddnet.org)
+# Leviathan for macOS (Apple Silicon)
 
-[![Build status](https://github.com/ddnet/ddnet/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/ddnet/ddnet/actions/workflows/build.yml?branch=master)
-[![Code coverage](https://codecov.io/gh/ddnet/ddnet/branch/master/graph/badge.svg)](https://codecov.io/gh/ddnet/ddnet/branch/master)
-[![Translation status](https://hosted.weblate.org/widget/ddnet/ddnet/svg-badge.svg)](https://hosted.weblate.org/engage/ddnet/)
+Leviathan is a DDNet 20.1 client with its own set of additions on top of the
+game: an automatic unfreeze shot, tee trails, 3D wireframe particles drifting
+behind the map, dressed-up laser beams, hats, a focus mode that strips the
+screen down to the game, gradient text, a music island showing what the system
+is playing, a friends-and-enemies system with coloured dots, auto replies, custom
+backgrounds (pictures and video), tile colours, a custom crosshair, hook colours,
+Discord rich presence with a Telegram button, and a settings page that gathers
+all of it under one tab.
 
-Our own flavor of DDRace, a Teeworlds mod. See the [website](https://ddnet.org) for more information.
+This is the **macOS build for Apple Silicon (arm64)**. It is built from the same
+source tree as the Windows client, commit for commit: everything that is not
+about the operating system is shared, and what is about it lives in its own
+files. The two clients look and behave the same because they are the same
+program.
 
-Development discussions happen on #ddnet on Quakenet ([Webchat](http://webchat.quakenet.org/?channels=ddnet&uio=d4)) or on [Discord in the developer channel](https://discord.gg/xsEd9xu).
+## Requirements
 
-You can get binary releases on the [DDNet website](https://ddnet.org/downloads/), find it on [Steam](https://store.steampowered.com/app/412220/DDraceNetwork/) or [install from repository](#installation-from-repository).
+- A Mac with Apple Silicon (M1 or later). Intel Macs are not built for.
+- macOS 11 (Big Sur) or later: that is the first macOS that runs on Apple
+  Silicon at all. The binary's own deployment target is 10.15.
+- Nothing else to install: the app bundle carries every library it needs.
 
-- [Code Browser](https://ddnet.org/codebrowser/DDNet/)
-- [Source Code Documentation](https://codedoc.ddnet.org/)
-- [Building Guide](docs/BUILDING.md)
-- [Debugging Guide](docs/DEBUGGING.md)
-- [Contributing Guide](docs/CONTRIBUTING.md)
+## Installing the release
 
-If you want to learn about the source code, you can check the [Development](https://wiki.ddnet.org/wiki/Development) article on the wiki.
+1. Download `Leviathan-<version>-macos.dmg` from the Releases page.
+2. Open the image and drag `Leviathan.app` into `Applications`.
+3. The app is not signed or notarized, so macOS refuses it the first time. Two
+   ways past that:
+   - open **System Settings → Privacy & Security**, scroll to the note about
+     Leviathan being blocked, and choose **Open Anyway**; or
+   - in Terminal: `xattr -dr com.apple.quarantine /Applications/Leviathan.app`
+4. Start it from `Applications`.
 
-## Cloning
+If it does not start, the client writes a log to `~/Desktop/Leviathan.log`
+by default on macOS. That file is the first thing to look at, and the first thing
+to send when asking for help.
 
-To clone this repository with external libraries and no history (~700 MiB):
+## Building from source
 
-```sh
-git clone --depth 1 --recursive --shallow-submodules https://github.com/ddnet/ddnet
+Everything below happens in Terminal.
+
+```bash
+# Xcode command line tools, if they are not there yet
+xcode-select --install
+
+# Build tools and the libraries CMake will look for
+brew install cmake ninja pkg-config sdl2 ffmpeg
+brew upgrade freetype
+python3 -m pip install --break-system-packages dmgbuild pyobjc-framework-Quartz
+
+# The prebuilt libraries the bundle ships with (not a submodule)
+git clone https://github.com/sdenar228-alt/Leviathan-macos.git
+cd Leviathan-macos
+git clone --depth 1 https://github.com/ddnet/ddnet-libs ddnet-libs
+
+# Configure and build the client
+cmake -S . -B build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DPREFER_BUNDLED_LIBS=ON \
+  -DCLIENT_EXECUTABLE=Leviathan \
+  -DDISCORD=ON
+cmake --build build --target game-client
+
+# Optional: the .app bundle and the disk image
+cmake --build build --target package_dmg
 ```
 
-To clone this repository when you have the necessary libraries on your system already with no history (~150 MiB):
+`PREFER_BUNDLED_LIBS=ON` matters. Without it CMake picks freetype, png, opus
+and ogg from Homebrew, whose dylibs carry absolute `/opt/homebrew` paths, and the
+resulting app only runs on a machine that has Homebrew at the same paths.
 
-```sh
-git clone --depth 1 https://github.com/ddnet/ddnet
+For a Debug build, use `-DCMAKE_BUILD_TYPE=Debug` and a different build
+directory.
+
+## Running from the build directory
+
+```bash
+cd build
+./Leviathan
 ```
 
-To clone this repository with external libraries and full history (~1 GiB):
+The client finds its `data/` directory beside the executable. Settings are
+written to `~/Library/Application Support/DDNet/`, the same place the stock
+DDNet client uses, so a stock config carries over.
 
-```sh
-git clone --recursive https://github.com/ddnet/ddnet
-```
+## What is different on macOS
 
-To clone this repository when you have the necessary libraries on your system already with full history (~450 MiB):
+- **Music island** reads what the system says is playing through the Now Playing
+  service. From macOS 15.4 on, only Spotify and Music can be read, and the first
+  time the system asks whether to allow it.
+- **Video backgrounds** decode through AVFoundation; pictures (png, jpg, bmp,
+  webp, heic) and videos (mp4, mov, m4v) all work.
+- **Discord presence** talks to the Discord app through its unix socket rather
+  than a named pipe. Same buttons, same picture.
+- **The log** goes to `~/Desktop/Leviathan.log` unless `logfile` is set.
+- **Graphics** use OpenGL 3.3. The Vulkan backend is not built on macOS.
 
-```sh
-git clone https://github.com/ddnet/ddnet
-```
+## Known limitations
 
-To clone this repository since we moved the libraries to https://github.com/ddnet/ddnet-libs with history (~250 MiB):
+- The app is unsigned. Every fresh download has to be let through Gatekeeper
+  once (see Installing).
+- Apple Silicon only. There is no Intel build and no universal binary.
+- The custom tee shader (`shader/tee.frag`) needs the OpenGL 3.3 backend, which
+  is what the client starts on by default.
 
-```sh
-git clone --shallow-exclude=included-libs https://github.com/ddnet/ddnet
-```
+## How the port was done
 
-To clone the libraries if you have previously cloned DDNet without them, or if you require the ddnet-libs history instead of a shallow clone:
+`PORTING_LOG.md` lists every problem met on the way to macOS, its cause, the fix
+and how the fix was checked. It also states plainly which parts have only been
+verified by the automated build and not by a person at a Mac.
 
-```sh
-git submodule update --init --recursive
-```
+## License
 
-## Dependencies on Linux / macOS
+DDNet's own license applies to the whole tree, this build included: see
+`license.txt` at the root of the repository.
 
-You can install the required libraries on your system, `touch CMakeLists.txt` and CMake will use the system-wide libraries by default. You can install all required dependencies and CMake on Debian or Ubuntu like this:
+## Continuous builds
 
-```sh
-sudo apt install build-essential cargo cmake git glslang-tools google-mock libavcodec-extra libavdevice-dev libavfilter-dev libavformat-dev libavutil-dev libcurl4-openssl-dev libfreetype6-dev libglew-dev libnotify-dev libogg-dev libopus-dev libopusfile-dev libpng-dev libsdl2-dev libsqlite3-dev libssl-dev libvulkan-dev libwavpack-dev libx264-dev ninja-build python3 rustc spirv-tools
-```
-If your distribution doesn't ship with a `rustc` that is new enough, you can use `rustup` which automatically provides `rustc` 1.85.0 and above (this command removes `rustc` and reinstalls it as part of `rustup`.):
-```sh
-sudo apt install rustup
-```
-
-In case the `rustc` dependency doesn't have the required version for any reason:
-```sh
-sudo apt install rustup-1.85
-```
-
-On older distributions like Ubuntu 18.04 don't install `google-mock`, but instead set `-DDOWNLOAD_GTEST=ON` when building to get a more recent gtest/gmock version.
-
-On older distributions `rustc` version might be too old, to get an up-to-date Rust compiler you can use [rustup](https://rustup.rs/) with stable channel instead or try the `rustc-mozilla` package.
-
-Or on CentOS, RedHat and AlmaLinux like this:
-
-```sh
-sudo yum install cargo cmake ffmpeg-devel freetype-devel gcc gcc-c++ git glew-devel glslang gmock-devel gtest-devel libcurl-devel libnotify-devel libogg-devel libpng-devel libx264-devel ninja-build openssl-devel opus-devel opusfile-devel python3 rust SDL2-devel spirv-tools sqlite-devel vulkan-devel wavpack-devel
-```
-
-Or on Fedora like this:
-
-```sh
-sudo dnf install cargo cmake ffmpeg-devel freetype-devel gcc gcc-c++ git glew-devel glslang gmock-devel gtest-devel libcurl-devel libnotify-devel libogg-devel libpng-devel make ninja-build openssl-devel opus-devel opusfile-devel python SDL2-devel spirv-tools sqlite-devel vulkan-devel wavpack-devel x264-devel
-```
-
-Or on Arch Linux like this:
-
-```sh
-sudo pacman -S --needed base-devel cmake curl ffmpeg freetype2 git glew glslang gmock libnotify libpng ninja opusfile python rust sdl2 spirv-tools sqlite vulkan-headers vulkan-icd-loader wavpack x264
-```
-
-Or on Gentoo like this:
-
-```sh
-emerge --ask dev-build/ninja dev-db/sqlite dev-lang/rust-bin dev-libs/glib dev-libs/openssl dev-util/glslang dev-util/spirv-headers dev-util/spirv-tools media-libs/freetype media-libs/glew media-libs/libglvnd media-libs/libogg media-libs/libpng media-libs/libsdl2 media-libs/libsdl2[vulkan] media-libs/opus media-libs/opusfile media-libs/pnglite media-libs/vulkan-loader[layers] media-sound/wavpack media-video/ffmpeg net-misc/curl x11-libs/gdk-pixbuf x11-libs/libnotify
-```
-
-Or on Void Linux like this:
-
-```sh
-sudo xbps-install -S base-devel cargo cmake ffmpeg6-devel freetype-devel git glew-devel glslang gtest-devel libcurl-devel libnotify-devel libogg-devel libpng-devel ninja openssl-devel opus-devel opusfile-devel sqlite-devel SPIRV-Tools-devel vulkan-loader wavpack-devel x264-devel SDL2-devel
-```
-
-On macOS you can use [homebrew](https://brew.sh/) to install build dependencies like this:
-
-```sh
-brew install cmake ffmpeg freetype glew glslang googletest libpng molten-vk ninja opusfile rust SDL2 spirv-tools vulkan-headers wavpack x264
-```
-
-If you don't want to use the system libraries, you can pass the `-DPREFER_BUNDLED_LIBS=ON` parameter to cmake.
-
-DDNet requires additional libraries, some of which are bundled for the most common platforms (Windows, Mac, Linux, all x86 and x86\_64) for convenience and the official builds. The bundled libraries for official builds are now in the ddnet-libs submodule. Note that when you build and develop locally, you should ideally use your system's package manager to install the dependencies, instead of relying on ddnet-libs submodule, which does not contain all dependencies anyway (e.g. openssl, vulkan). See the previous section for how to get the dependencies. Alternatively see our [Building Guide](docs/BUILDING.md) for how to disable some features and their dependencies (for example, `-DVULKAN=OFF` won't require Vulkan).
-
-## Building on Linux and macOS
-
-To compile DDNet yourself, execute the following commands in the source root:
-
-```sh
-cmake -Bbuild -GNinja
-cmake --build build
-```
-
-## Building on Windows with the Visual Studio IDE
-
-Download and install some version of [Microsoft Visual Studio](https://www.visualstudio.com/) (At the time of writing, MSVS Community 2022) with **C++ support**.
-
-You'll have to install both [Python 3](https://www.python.org/downloads/) and [Rust](https://rustup.rs/) as well.
-
-Make sure the MSVC build tools, C++ CMake-Tools and the latest Windows SDK version appropriate to your windows version are selected in the installer.
-
-Now open up your Project folder, Visual Studio should automatically detect and configure your project using CMake.
-
-On your tools hotbar next to the triangular "Run" Button, you can now select what you want to start (e.g game-client or game-server) and build it.
-
-## Building on Windows with standalone MSVC build tools
-
-First off you will need to install the following dependencies:
-
-- [MSVC Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/),
-- [Python 3](https://www.python.org/downloads/windows/),
-- [Rust](https://www.rust-lang.org/tools/install).
-
-To compile with the Vulkan graphics backend (disabled by default), you also need to install the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home).
-
-To compile and build DDNet on Windows, use your IDE of choice either with a CMake integration (e.g Visual Studio Code), or by ~~**deprecated**~~ using the CMake GUI.
-
-Configure CMake to use the MSVC Build Tools appropriate to your System by your IDE's instructions.
-
-If you're using Visual Studio Code, you can use the [CMake Tools](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cmake-tools) extension to configure and build the project.
-
-You can then open the project folder in Visual Studio Code and press `Ctrl+Shift+P` to open the command palette, then search for `CMake: Configure`.
-
-This will open up a prompt for you to select a kit, select your `Visual Studio` version and save it. You can now use the GUI (bottom left) to compile and build your project.
-
-
-<a href="https://repology.org/metapackage/ddnet/versions">
-	<img src="https://repology.org/badge/vertical-allrepos/ddnet.svg?header=" alt="Packaging status" align="right">
-</a>
-
-## Installation from Repository
-
-Debian/Ubuntu
-
-```sh
-sudo apt-get install ddnet
-```
-
-MacOS
-
-```sh
-brew install --cask ddnet
-```
-
-Fedora
-
-```sh
-sudo dnf install ddnet
-```
-
-Arch Linux
-
-```sh
-yay -S ddnet
-```
-
-FreeBSD
-
-```sh
-sudo pkg install DDNet
-```
-
-Windows (Scoop)
-```cmd
-scoop bucket add games
-scoop install games/ddnet
-```
-
-## Benchmarking
-
-Detailed instructions can be found in [`docs/BENCHMARKING.md`](docs/BENCHMARKING.md).
-
-## Working with the official DDNet Database
-
-Detailed instructions can be found in [`docs/DATABASE.md`](docs/DATABASE.md).
-
-## Debugging
-
-Detailed instructions can be found in [`docs/DEBUGGING.md`](docs/DEBUGGING.md).
-
-## Better Git Blame
-
-First, use a better tool than `git blame` itself, e.g. [`tig`](https://jonas.github.io/tig/). There's probably a good UI for Windows, too. Alternatively, use the GitHub UI, click "Blame" in any file view.
-
-For `tig`, use `tig blame path/to/file.cpp` to open the blame view, you can navigate with arrow keys or kj, press comma to go to the previous revision of the current line, q to quit.
-
-Only then you could also set up git to ignore specific formatting revisions:
-
-```sh
-git config blame.ignoreRevsFile formatting-revs.txt
-```
-
-## (Neo)Vim Syntax Highlighting for config files
-
-Copy the file detection and syntax files to your vim config folder:
-
-```sh
-# vim
-cp -R other/vim/* ~/.vim/
-
-# neovim
-cp -R other/vim/* ~/.config/nvim/
-```
+`.github/workflows/macos-app.yml` builds the client on Apple Silicon runners in
+Release and Debug, runs a headless client through startup and shutdown, and
+packages the Release build into the disk image published on the Releases page.
